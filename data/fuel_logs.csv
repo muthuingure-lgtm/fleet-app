@@ -1,0 +1,3 @@
+FuelID,Driver,DateTime,Litres,Cost,MileagePhoto,ReceiptPhoto,DistanceSinceLastRefuelKM,EfficiencyKMperL
+d0d0e234259a410fbd0eda37951d9ae4,Simon Ngure,2025-08-15 09:00:17,60.0,,,,230.0,3.83
+1ad86d31f7824a1fa989ca1b2e4ab1d2,Simon Ngure,2025-08-15 09:00:27,60.0,,,,0.0,0.0
