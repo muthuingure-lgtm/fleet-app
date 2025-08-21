@@ -33,8 +33,50 @@ VEHICLES = [
     "KCX 995J", "KCZ 722M", "KDB 548V", "KDC 945F", "KDE 144K", "Executive"
 ]
 
-# Admin access code
-ADMIN_CODE = "admin123"
+# Admin credentials file
+ADMIN_CREDS_FILE = os.path.join(DATA_DIR, "admin_creds.csv")
+
+# Default admin credentials (used only if no admin exists)
+DEFAULT_ADMIN_USERNAME = "admin"
+DEFAULT_ADMIN_PASSWORD = "Admin@1"
+
+def validate_password(password):
+    """Validate password: 6+ chars, 1 uppercase, 1 special character"""
+    if len(password) < 6:
+        return False, "Password must be at least 6 characters long"
+    if not any(c.isupper() for c in password):
+        return False, "Password must contain at least one uppercase letter"
+    if not any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
+        return False, "Password must contain at least one special character"
+    return True, "Password is valid"
+
+def load_admin_creds():
+    """Load admin credentials from file, create default if not exists"""
+    if os.path.exists(ADMIN_CREDS_FILE):
+        df = pd.read_csv(ADMIN_CREDS_FILE)
+        if not df.empty:
+            return df.iloc[0]["username"], df.iloc[0]["password"]
+    
+    # Create default admin
+    df = pd.DataFrame({
+        "username": [DEFAULT_ADMIN_USERNAME],
+        "password": [DEFAULT_ADMIN_PASSWORD]
+    })
+    df.to_csv(ADMIN_CREDS_FILE, index=False)
+    return DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_PASSWORD
+
+def save_admin_creds(username, password):
+    """Save admin credentials to file"""
+    df = pd.DataFrame({
+        "username": [username],
+        "password": [password]
+    })
+    df.to_csv(ADMIN_CREDS_FILE, index=False)
+
+def verify_admin_login(username, password):
+    """Verify admin login credentials"""
+    stored_username, stored_password = load_admin_creds()
+    return username == stored_username and password == stored_password
 
 # -----------------------
 # Session init
@@ -43,6 +85,7 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.role = None
     st.session_state.vehicle = None
+    st.session_state.admin_username = None
 
 # -----------------------
 # Login page
@@ -50,28 +93,46 @@ if "logged_in" not in st.session_state:
 if not st.session_state.logged_in:
     st.title("🚚 Fleet Management Login")
     
-    st.markdown("### Please login to access the system")
-    st.info("Drivers: Enter your vehicle number | Admin: Enter admin code")
+    # Login tabs
+    login_tab, admin_tab = st.tabs(["Driver Login", "Admin Login"])
     
-    with st.form("login_form"):
-        vehicle_number = st.text_input("Enter Vehicle Number or Admin Code:").strip()
-        login_submitted = st.form_submit_button("Login")
+    with login_tab:
+        st.markdown("### Driver Login")
+        st.info("Enter your vehicle registration number")
+        
+        with st.form("driver_login_form"):
+            vehicle_number = st.text_input("Vehicle Registration Number:").strip()
+            driver_login_submitted = st.form_submit_button("Login as Driver")
+        
+        if driver_login_submitted:
+            if vehicle_number in VEHICLES:
+                st.session_state.logged_in = True
+                st.session_state.role = "driver"
+                st.session_state.vehicle = vehicle_number
+                st.success(f"Logged in as driver for {vehicle_number}")
+                st.rerun()
+            else:
+                st.error("Invalid vehicle number. Please check and try again.")
     
-    if login_submitted:
-        if vehicle_number in VEHICLES:
-            st.session_state.logged_in = True
-            st.session_state.role = "driver"
-            st.session_state.vehicle = vehicle_number
-            st.success(f"Logged in as driver for {vehicle_number}")
-            st.rerun()
-        elif vehicle_number == ADMIN_CODE:
-            st.session_state.logged_in = True
-            st.session_state.role = "admin"
-            st.session_state.vehicle = None
-            st.success("Logged in as Administrator")
-            st.rerun()
-        else:
-            st.error("Invalid vehicle number or admin code. Please check and try again.")
+    with admin_tab:
+        st.markdown("### Administrator Login")
+        st.info("Enter your admin username and password")
+        
+        with st.form("admin_login_form"):
+            admin_username = st.text_input("Username:").strip()
+            admin_password = st.text_input("Password:", type="password")
+            admin_login_submitted = st.form_submit_button("Login as Admin")
+        
+        if admin_login_submitted:
+            if verify_admin_login(admin_username, admin_password):
+                st.session_state.logged_in = True
+                st.session_state.role = "admin"
+                st.session_state.vehicle = None
+                st.session_state.admin_username = admin_username
+                st.success(f"Logged in as Administrator ({admin_username})")
+                st.rerun()
+            else:
+                st.error("Invalid username or password.")
     
     # Stop execution here if not logged in
     st.stop()
@@ -226,19 +287,20 @@ with col2:
     if st.session_state.role == "driver":
         st.info(f"Driver: {st.session_state.vehicle}")
     else:
-        st.info("Administrator Access")
+        st.info(f"Admin: {st.session_state.admin_username}")
 with col3:
     if st.button("Logout"):
         st.session_state.logged_in = False
         st.session_state.role = None
         st.session_state.vehicle = None
+        st.session_state.admin_username = None
         st.rerun()
 
 # Create sidebar menu based on role
 if st.session_state.role == "driver":
     menu = st.sidebar.radio("Menu", ["Start Trip", "End Trip", "Log Refuel"])
 else:  # admin
-    menu = st.sidebar.radio("Menu", ["Start Trip", "End Trip", "Log Refuel", "View Dashboard"])
+    menu = st.sidebar.radio("Menu", ["Start Trip", "End Trip", "Log Refuel", "View Dashboard", "Admin Settings", "Delete Records"])
 
 # ---------- START TRIP ----------
 if menu == "Start Trip":
@@ -614,3 +676,121 @@ elif menu == "View Dashboard" and st.session_state.role == "admin":
 if st.sidebar.button("🔄 Refresh Data"):
     st.cache_data.clear()
     st.rerun()
+
+# ---------- ADMIN SETTINGS ----------
+elif menu == "Admin Settings" and st.session_state.role == "admin":
+    st.header("⚙️ Admin Settings")
+    st.markdown("Change admin username and password")
+    
+    current_username, current_password = load_admin_creds()
+    
+    with st.form("change_admin_creds"):
+        st.subheader("Change Admin Credentials")
+        new_username = st.text_input("New Username:", value=current_username)
+        new_password = st.text_input("New Password:", type="password")
+        confirm_password = st.text_input("Confirm New Password:", type="password")
+        
+        st.info("Password requirements: At least 6 characters, 1 uppercase letter, 1 special character (!@#$%^&*()_+-=[]{}|;:,.<>?)")
+        
+        change_creds_btn = st.form_submit_button("Update Credentials")
+    
+    if change_creds_btn:
+        if not new_username.strip():
+            st.error("Username cannot be empty")
+        elif new_password != confirm_password:
+            st.error("Passwords do not match")
+        else:
+            is_valid, message = validate_password(new_password)
+            if is_valid:
+                save_admin_creds(new_username.strip(), new_password)
+                st.session_state.admin_username = new_username.strip()
+                st.success("Admin credentials updated successfully!")
+                st.balloons()
+            else:
+                st.error(message)
+
+# ---------- DELETE RECORDS ----------
+elif menu == "Delete Records" and st.session_state.role == "admin":
+    st.header("🗑️ Delete Records")
+    st.warning("⚠️ This action cannot be undone. Please be careful when deleting records.")
+    
+    delete_type = st.selectbox("Select Record Type to Delete", ["Trip Records", "Fuel Records"])
+    
+    if delete_type == "Trip Records":
+        st.subheader("Delete Trip Records")
+        
+        if trips_df.empty:
+            st.info("No trip records found.")
+        else:
+            # Show trips with selection
+            st.write("Select trips to delete:")
+            
+            # Create display dataframe with key columns
+            display_cols = ["TripID", "VehicleReg", "Driver", "StartDateTime", "EndDateTime", "Status", "DistanceKM"]
+            display_df = trips_df[display_cols].copy()
+            
+            # Add selection checkboxes
+            selected_trips = []
+            for idx, row in display_df.iterrows():
+                col1, col2 = st.columns([0.1, 0.9])
+                with col1:
+                    if st.checkbox("", key=f"trip_{idx}"):
+                        selected_trips.append(idx)
+                with col2:
+                    st.write(f"**{row['TripID']}** | {row['VehicleReg']} | {row['Driver']} | {row['StartDateTime']} | Status: {row['Status']}")
+            
+            if selected_trips:
+                st.write(f"**{len(selected_trips)} trips selected for deletion**")
+                
+                col1, col2 = st.columns([1, 1])
+                with col1:
+                    if st.button("🗑️ Delete Selected Trips", type="primary"):
+                        # Remove selected trips
+                        trips_df_updated = trips_df.drop(selected_trips).reset_index(drop=True)
+                        save_csv(TRIPS_CSV, trips_df_updated)
+                        st.success(f"Successfully deleted {len(selected_trips)} trip records!")
+                        st.rerun()
+                
+                with col2:
+                    if st.button("Select All"):
+                        st.rerun()
+    
+    elif delete_type == "Fuel Records":
+        st.subheader("Delete Fuel Records")
+        
+        if fuel_df.empty:
+            st.info("No fuel records found.")
+        else:
+            # Show fuel records with selection
+            st.write("Select fuel records to delete:")
+            
+            # Create display dataframe with key columns
+            display_cols = ["FuelID", "VehicleReg", "Driver", "DateTime", "Litres", "Cost"]
+            display_df = fuel_df[display_cols].copy()
+            
+            # Add selection checkboxes
+            selected_fuel = []
+            for idx, row in display_df.iterrows():
+                col1, col2 = st.columns([0.1, 0.9])
+                with col1:
+                    if st.checkbox("", key=f"fuel_{idx}"):
+                        selected_fuel.append(idx)
+                with col2:
+                    cost_text = f"KSh {row['Cost']:.2f}" if pd.notna(row['Cost']) else "N/A"
+                    st.write(f"**{row['FuelID']}** | {row['VehicleReg']} | {row['Driver']} | {row['DateTime']} | {row['Litres']}L | {cost_text}")
+            
+            if selected_fuel:
+                st.write(f"**{len(selected_fuel)} fuel records selected for deletion**")
+                
+                col1, col2 = st.columns([1, 1])
+                with col1:
+                    if st.button("🗑️ Delete Selected Fuel Records", type="primary"):
+                        # Remove selected fuel records
+                        fuel_df_updated = fuel_df.drop(selected_fuel).reset_index(drop=True)
+                        save_csv(FUEL_CSV, fuel_df_updated)
+                        st.success(f"Successfully deleted {len(selected_fuel)} fuel records!")
+                        st.rerun()
+                
+                with col2:
+                    if st.button("Select All"):
+                        st.rerun()
