@@ -1,29 +1,84 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import os
 import uuid
 from datetime import datetime, timedelta
 
-# ---------------------------
-# CONFIG + FOLDERS
-# ---------------------------
+# -----------------------
+# CONFIG + FOLDERS (moved to top)
+# -----------------------
 st.set_page_config(page_title="Fleet Management", page_icon="🚚", layout="wide")
 
 DATA_DIR = "data"
 UPLOADS_DIR = "uploads"
 MILEAGE_DIR = os.path.join(UPLOADS_DIR, "mileage")
 RECEIPTS_DIR = os.path.join(UPLOADS_DIR, "receipts")
-
 TRIPS_CSV = os.path.join(DATA_DIR, "trips.csv")
 FUEL_CSV = os.path.join(DATA_DIR, "fuel_logs.csv")
 
 for d in [DATA_DIR, UPLOADS_DIR, MILEAGE_DIR, RECEIPTS_DIR]:
     os.makedirs(d, exist_ok=True)
 
-# ---------------------------
+# -----------------------
+# Vehicle list
+# -----------------------
+VEHICLES = [
+    "KCA 940V", "KCB 621S", "KCA 936V", "KCA 938V", "KCB 622S", "KCA 937V", "KCA 942V",
+    "KDE 018Q", "KDE 017Q", "KCA 138W", "KCA 935V", "KCA 941V", "KDE 153W", "KDM 357K",
+    "KDR 654R", "KDG 438Z", "KDR 657H", "KDB 225R", "KDR 919A", "KDD 382W", "KDD 901K",
+    "KDD 985W", "KDP 568N", "KDE 206Q", "KDD 359U", "KCX 106R", "KDE 211K", "KDE 262L",
+    "KDE 309L", "KDE 098L", "KDK 139R", "KCX 712N", "KDC 563J", "KDD 113R", "KDE 177K",
+    "KDE 225L", "KDE 454K", "KDR 819B", "KCX 718N", "KDR 462A", "KDQ 896V", "KDM 724U",
+    "KBT 673G", "KDB 266R", "KDR 695S", "KCZ 218P", "KDB 971R", "KDE 199K", "KDE 188K",
+    "KCX 995J", "KCZ 722M", "KDB 548V", "KDC 945F", "KDE 144K"
+]
+
+# Special executive login
+EXECUTIVE_CODE = "Executive"
+
+# -----------------------
+# Session init
+# -----------------------
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.role = None
+    st.session_state.vehicle = None
+
+# -----------------------
+# Login page
+# -----------------------
+if not st.session_state.logged_in:
+    st.title("🚚 Fleet Management Login")
+    
+    st.markdown("### Please login to access the system")
+    st.info("Drivers: Enter your vehicle number | Executives: Enter 'Executive'")
+    
+    with st.form("login_form"):
+        vehicle_number = st.text_input("Enter Vehicle Number or 'Executive' to login:").strip()
+        login_submitted = st.form_submit_button("Login")
+    
+    if login_submitted:
+        if vehicle_number in VEHICLES:
+            st.session_state.logged_in = True
+            st.session_state.role = "driver"
+            st.session_state.vehicle = vehicle_number
+            st.success(f"Logged in as driver for {vehicle_number}")
+            st.rerun()
+        elif vehicle_number == EXECUTIVE_CODE:
+            st.session_state.logged_in = True
+            st.session_state.role = "admin"
+            st.session_state.vehicle = None
+            st.success("Logged in as Executive (Admin)")
+            st.rerun()
+        else:
+            st.error("Invalid vehicle number or code. Please check and try again.")
+    
+    # Stop execution here if not logged in
+    st.stop()
+
+# -----------------------
 # SCHEMA / COLUMNS
-# ---------------------------
+# -----------------------
 TRIP_COLUMNS = [
     "TripID", "VehicleReg", "Driver", "DriverContact", "VehicleType",
     "StartDateTime", "EndDateTime",
@@ -61,12 +116,11 @@ FUEL_DTYPES = {
     "DistanceSinceLastRefuelKM": "float64", "EfficiencyKMperL": "float64"
 }
 
-# ---------------------------
+# -----------------------
 # HELPERS
-# ---------------------------
+# -----------------------
 def now_iso():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
 
 def save_upload(uploaded_file, folder, prefix):
     """Save an uploaded image to disk and return its relative path (or None)."""
@@ -79,14 +133,12 @@ def save_upload(uploaded_file, folder, prefix):
         f.write(uploaded_file.getbuffer())
     return path
 
-
 def create_empty_df(columns, dtypes_map):
     data = {}
     for col in columns:
         dt = dtypes_map.get(col, "object")
         data[col] = pd.Series(dtype=dt)
     return pd.DataFrame(data, columns=columns)
-
 
 def load_csv_with_schema(path, columns, dtypes_map):
     """Load CSV and coerce to schema; create empty file if missing. Ensures missing columns are added."""
@@ -110,10 +162,8 @@ def load_csv_with_schema(path, columns, dtypes_map):
         df.to_csv(path, index=False)
     return df
 
-
 def save_csv(path, df):
     df.to_csv(path, index=False)
-
 
 def get_open_trip_for_driver(trips_df, driver, vehicle_reg=None):
     """Return the most recent open trip row (as DataFrame) for a driver (and optional vehicle), or empty df."""
@@ -125,7 +175,6 @@ def get_open_trip_for_driver(trips_df, driver, vehicle_reg=None):
         return pd.DataFrame()
     open_trips = open_trips.sort_values("StartDateTime", ascending=False)
     return open_trips.head(1)
-
 
 def distance_since_last_refuel_km(trips_df, fuel_df, driver, vehicle_reg, this_refuel_time_iso):
     """Sum distance of closed trips that ended after the last refuel and up to this refuel time for driver+vehicle."""
@@ -159,7 +208,6 @@ def distance_since_last_refuel_km(trips_df, fuel_df, driver, vehicle_reg, this_r
     between["DistanceKM"] = pd.to_numeric(between["DistanceKM"], errors="coerce").fillna(0.0)
     return float(between["DistanceKM"].sum())
 
-
 # ---------------------------
 # LOAD DATA (schema enforced)
 # ---------------------------
@@ -167,11 +215,30 @@ trips_df = load_csv_with_schema(TRIPS_CSV, TRIP_COLUMNS, TRIP_DTYPES)
 fuel_df = load_csv_with_schema(FUEL_CSV, FUEL_COLUMNS, FUEL_DTYPES)
 
 # ---------------------------
-# STREAMLIT UI
+# MAIN APPLICATION (only accessible after login)
 # ---------------------------
-st.title("🚚 Fleet Management System — Enhanced")
 
-menu = st.sidebar.radio("Menu", ["Start Trip", "End Trip", "Log Refuel", "View Dashboard"])
+# Header with user info and logout
+col1, col2, col3 = st.columns([3, 1, 1])
+with col1:
+    st.title("🚚 Fleet Management System — Enhanced")
+with col2:
+    if st.session_state.role == "driver":
+        st.info(f"Driver: {st.session_state.vehicle}")
+    else:
+        st.info("Executive Access")
+with col3:
+    if st.button("Logout"):
+        st.session_state.logged_in = False
+        st.session_state.role = None
+        st.session_state.vehicle = None
+        st.rerun()
+
+# Create sidebar menu based on role
+if st.session_state.role == "driver":
+    menu = st.sidebar.radio("Menu", ["Start Trip", "End Trip", "Log Refuel"])
+else:  # admin/executive
+    menu = st.sidebar.radio("Menu", ["Start Trip", "End Trip", "Log Refuel", "View Dashboard"])
 
 # ---------- START TRIP ----------
 if menu == "Start Trip":
@@ -179,7 +246,12 @@ if menu == "Start Trip":
     st.info("You cannot start a new trip if there is already an open trip for the same driver+vehicle. Gate pass must be unique.")
 
     with st.form("start_trip_form", clear_on_submit=False):
-        vehicle_reg = st.text_input("Vehicle Registration (e.g., KAA 123A) *").strip()
+        # Pre-fill vehicle registration for drivers
+        if st.session_state.role == "driver":
+            vehicle_reg = st.text_input("Vehicle Registration", value=st.session_state.vehicle, disabled=True)
+        else:
+            vehicle_reg = st.text_input("Vehicle Registration (e.g., KAA 123A) *").strip()
+        
         driver = st.text_input("Driver Name *").strip()
         driver_contact = st.text_input("Driver Contact (optional)").strip()
         vehicle_type = st.selectbox("Vehicle Type", ["Truck", "Trailer", "Pickup", "Van", "Other"])
@@ -257,7 +329,12 @@ elif menu == "End Trip":
     st.header("🏁 End a Trip")
     st.info("Find and close your open trip by entering Driver and Vehicle Registration. When closing, request allowances if applicable.")
 
-    vehicle_reg = st.text_input("Vehicle Registration *").strip()
+    # Pre-fill vehicle registration for drivers
+    if st.session_state.role == "driver":
+        vehicle_reg = st.text_input("Vehicle Registration", value=st.session_state.vehicle, disabled=True)
+    else:
+        vehicle_reg = st.text_input("Vehicle Registration *").strip()
+    
     driver = st.text_input("Driver Name *").strip()
 
     if st.button("Find My Open Trip"):
@@ -330,7 +407,12 @@ elif menu == "Log Refuel":
     st.header("⛽ Log Refuel")
     st.info("Efficiency = distance since last refuel ÷ litres on this refuel. Receipt attachment is required.")
 
-    vehicle_reg = st.text_input("Vehicle Registration (match vehicle on trip) *").strip()
+    # Pre-fill vehicle registration for drivers
+    if st.session_state.role == "driver":
+        vehicle_reg = st.text_input("Vehicle Registration", value=st.session_state.vehicle, disabled=True)
+    else:
+        vehicle_reg = st.text_input("Vehicle Registration (match vehicle on trip) *").strip()
+    
     driver = st.text_input("Driver Name *").strip()
     litres = st.number_input("Fuelled Litres *", min_value=0.0, step=0.1, format="%.2f")
     cost = st.number_input("Cost (optional)", min_value=0.0, step=0.1, format="%.2f")
@@ -380,8 +462,8 @@ elif menu == "Log Refuel":
             st.success(f"Refuel logged. Distance since last refuel: {dist_km:.2f} KM | Efficiency: {eff_text}")
             st.balloons()
 
-# ---------- VIEW DASHBOARD ----------
-elif menu == "View Dashboard":
+# ---------- VIEW DASHBOARD (Admin only) ----------
+elif menu == "View Dashboard" and st.session_state.role == "admin":
     st.header("📊 Dashboard")
     st.markdown("Use the controls to filter the period, vehicle, driver or report type.")
 
@@ -400,175 +482,135 @@ elif menu == "View Dashboard":
 
     vehicle_filter = st.sidebar.multiselect("Vehicle (filter)", sorted(trips_df["VehicleReg"].dropna().unique()), default=[])
     driver_filter = st.sidebar.multiselect("Driver (filter)", sorted(trips_df["Driver"].dropna().unique()), default=[])
-    vehicle_type_filter = st.sidebar.multiselect("Vehicle Type", sorted(trips_df["VehicleType"].dropna().unique()), default=[])
-
-    # Prepare filtered copies
-    trips = trips_df.copy()
-    fuel = fuel_df.copy()
-
-    # Normalize datetimes and date columns for filtering & plotting
-    trips["StartDateTime_dt"] = pd.to_datetime(trips["StartDateTime"], errors="coerce")
-    trips["EndDateTime_dt"] = pd.to_datetime(trips["EndDateTime"], errors="coerce")
-    trips["StartDate"] = trips["StartDateTime_dt"].dt.date
-    trips["EndDate"] = trips["EndDateTime_dt"].dt.date
-
-    fuel["DateTime_dt"] = pd.to_datetime(fuel["DateTime"], errors="coerce")
-    fuel["Date"] = fuel["DateTime_dt"].dt.date
 
     # Apply filters
+    filtered_trips = trips_df.copy()
+    filtered_fuel = fuel_df.copy()
+
     if filter_by_date and start_date and end_date:
-        trips = trips[( (trips["StartDate"].notna()) & (trips["StartDate"] >= start_date) & (trips["StartDate"] <= end_date) ) |
-                      ( (trips["EndDate"].notna()) & (trips["EndDate"] >= start_date) & (trips["EndDate"] <= end_date) )]
-        fuel = fuel[(fuel["Date"].notna()) & (fuel["Date"] >= start_date) & (fuel["Date"] <= end_date)]
+        # Convert to datetime for filtering
+        filtered_trips["StartDateTime_dt"] = pd.to_datetime(filtered_trips["StartDateTime"], errors="coerce")
+        filtered_fuel["DateTime_dt"] = pd.to_datetime(filtered_fuel["DateTime"], errors="coerce")
+        
+        filtered_trips = filtered_trips[
+            (filtered_trips["StartDateTime_dt"].dt.date >= start_date) & 
+            (filtered_trips["StartDateTime_dt"].dt.date <= end_date)
+        ]
+        filtered_fuel = filtered_fuel[
+            (filtered_fuel["DateTime_dt"].dt.date >= start_date) & 
+            (filtered_fuel["DateTime_dt"].dt.date <= end_date)
+        ]
 
     if vehicle_filter:
-        trips = trips[trips["VehicleReg"].isin(vehicle_filter)]
-        fuel = fuel[fuel["VehicleReg"].isin(vehicle_filter)]
+        filtered_trips = filtered_trips[filtered_trips["VehicleReg"].isin(vehicle_filter)]
+        filtered_fuel = filtered_fuel[filtered_fuel["VehicleReg"].isin(vehicle_filter)]
 
     if driver_filter:
-        trips = trips[trips["Driver"].isin(driver_filter)]
-        fuel = fuel[fuel["Driver"].isin(driver_filter)]
+        filtered_trips = filtered_trips[filtered_trips["Driver"].isin(driver_filter)]
+        filtered_fuel = filtered_fuel[filtered_fuel["Driver"].isin(driver_filter)]
 
-    if vehicle_type_filter:
-        trips = trips[trips["VehicleType"].isin(vehicle_type_filter)]
-
-    # KPI Summary
-    try:
-        total_km = pd.to_numeric(trips[trips["Status"] == "closed"]["DistanceKM"], errors="coerce").fillna(0).sum()
-        total_litres = pd.to_numeric(fuel["Litres"], errors="coerce").fillna(0).sum()
-        total_fuel_cost = pd.to_numeric(fuel["Cost"], errors="coerce").fillna(0).sum()
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Distance (KM)", f"{total_km:.2f}")
-        col2.metric("Total Fuel (L)", f"{total_litres:.2f}")
-        col3.metric("Total Fuel Cost", f"{total_fuel_cost:.2f}")
-        # fuel cost per km
-        if total_km > 0:
-            st.sidebar.metric("Fuel cost / KM", f"{(total_fuel_cost/total_km):.3f}")
-    except Exception:
-        pass
-
-    st.markdown("---")
-
-    # Reports
+    # Display reports based on selection
     if report_type == "Trips Report":
-        st.subheader("Trips Report")
-        st.write("All trips (filtered):")
-        st.dataframe(trips[TRIP_COLUMNS].sort_values(["StartDateTime"], ascending=False).reset_index(drop=True), height=300)
-
-        # Trips per vehicle per day (closed trips)
-        trips_closed = trips[trips["Status"] == "closed"].copy()
-        if not trips_closed.empty:
-            trips_closed["StartDate"] = pd.to_datetime(trips_closed["StartDate"], errors="coerce").dt.date
-            trips_per_vehicle_day = trips_closed.groupby(["VehicleReg", "StartDate"]).size().reset_index(name="TotalTrips")
-            trips_per_vehicle_day = trips_per_vehicle_day.sort_values(["VehicleReg", "StartDate"], ascending=[True, True])
-            st.markdown("**Total trips per vehicle per day (closed trips)**")
-            st.dataframe(trips_per_vehicle_day, height=300)
-
-            # visualization: if a vehicle selected show its daily counts
-            vehicles = sorted(trips_per_vehicle_day["VehicleReg"].unique())
-            vehicle_choice = st.selectbox("Choose vehicle to chart daily trips", ["(All)"] + vehicles)
-            if vehicle_choice != "(All)":
-                df_v = trips_per_vehicle_day[trips_per_vehicle_day["VehicleReg"] == vehicle_choice].copy()
-                df_v = df_v.set_index("StartDate")["TotalTrips"]
-                st.line_chart(df_v)
-            else:
-                # total trips per day across fleet
-                total_trips_day = trips_per_vehicle_day.groupby("StartDate")["TotalTrips"].sum().sort_index()
-                st.bar_chart(total_trips_day)
+        st.subheader("📝 Trips Report")
+        if filtered_trips.empty:
+            st.warning("No trips found for the selected filters.")
         else:
-            st.info("No closed trips in this filter to aggregate trips per vehicle per day.")
-
-        # download filtered trips
-        csv = trips[TRIP_COLUMNS].to_csv(index=False)
-        st.download_button("Download Trips CSV (current filter)", csv, file_name="trips_filtered.csv", mime="text/csv")
+            st.dataframe(filtered_trips, use_container_width=True)
+            st.download_button(
+                "Download Trips CSV",
+                filtered_trips.to_csv(index=False),
+                "trips_report.csv",
+                "text/csv"
+            )
 
     elif report_type == "Fuel Report":
-        st.subheader("Fuel Report")
-        st.write("Fuel logs (filtered):")
-        st.dataframe(fuel[FUEL_COLUMNS].sort_values("DateTime", ascending=False).reset_index(drop=True), height=300)
-
-        # Efficiency over time
-        fuel_plot = fuel.copy()
-        fuel_plot["EfficiencyKMperL"] = pd.to_numeric(fuel_plot["EfficiencyKMperL"], errors="coerce")
-        fuel_plot = fuel_plot.dropna(subset=["DateTime_dt", "EfficiencyKMperL"])
-        fuel_plot = fuel_plot.sort_values("DateTime_dt")
-        if not fuel_plot.empty:
-            eff_series = fuel_plot.set_index("DateTime_dt")["EfficiencyKMperL"]
-            st.line_chart(eff_series)
-            st.caption("Fuel efficiency (KM per L) over time.")
+        st.subheader("⛽ Fuel Report")
+        if filtered_fuel.empty:
+            st.warning("No fuel records found for the selected filters.")
         else:
-            st.info("No efficiency data yet for chart.")
-
-        # Consumption trend (Litres)
-        cons_plot = fuel.copy()
-        cons_plot["Litres"] = pd.to_numeric(cons_plot["Litres"], errors="coerce").fillna(0)
-        cons_plot = cons_plot.dropna(subset=["DateTime_dt"])
-        cons_plot = cons_plot.sort_values("DateTime_dt")
-        if not cons_plot.empty:
-            litres_series = cons_plot.set_index("DateTime_dt")["Litres"]
-            st.bar_chart(litres_series)
-            st.caption("Fuel litres filled over time.")
-        else:
-            st.info("No consumption data yet for chart.")
-
-        csv = fuel[FUEL_COLUMNS].to_csv(index=False)
-        st.download_button("Download Fuel CSV (current filter)", csv, file_name="fuel_filtered.csv", mime="text/csv")
+            st.dataframe(filtered_fuel, use_container_width=True)
+            st.download_button(
+                "Download Fuel CSV",
+                filtered_fuel.to_csv(index=False),
+                "fuel_report.csv",
+                "text/csv"
+            )
 
     elif report_type == "Allowances Report":
-        st.subheader("Allowances Report")
-        # ensure numeric allowance columns
-        allowance_cols = ["DailyAllowance", "OffloadingPay", "LoaderAllowance", "SecurityFee", "ParkingFee", "NightOutAllowance"]
-        allow_df = trips.copy()
-        for col in allowance_cols:
-            if col in allow_df.columns:
-                allow_df[col] = pd.to_numeric(allow_df[col], errors="coerce").fillna(0.0)
-            else:
-                allow_df[col] = 0.0
-        allow_df["TotalAllowance"] = allow_df[allowance_cols].sum(axis=1)
-
-        # show table
-        show_cols = ["TripID", "VehicleReg", "Driver", "StartDateTime", "EndDateTime", "Status"] + allowance_cols + ["TotalAllowance"]
-        st.dataframe(allow_df[show_cols].sort_values("StartDateTime", ascending=False).reset_index(drop=True), height=350)
-
-        # aggregated allowances by vehicle or by driver
-        agg_by_vehicle = allow_df.groupby("VehicleReg")["TotalAllowance"].sum().reset_index().sort_values("TotalAllowance", ascending=False)
-        st.markdown("**Total allowances by vehicle**")
-        st.dataframe(agg_by_vehicle)
-        st.bar_chart(agg_by_vehicle.set_index("VehicleReg")["TotalAllowance"])
-
-        agg_by_driver = allow_df.groupby("Driver")["TotalAllowance"].sum().reset_index().sort_values("TotalAllowance", ascending=False)
-        st.markdown("**Total allowances by driver**")
-        st.dataframe(agg_by_driver.head(20))
-
-        csv = allow_df[show_cols].to_csv(index=False)
-        st.download_button("Download Allowances CSV (current filter)", csv, file_name="allowances_filtered.csv", mime="text/csv")
+        st.subheader("💰 Allowances Report")
+        if filtered_trips.empty:
+            st.warning("No trips found for the selected filters.")
+        else:
+            allowance_cols = ["TripID", "VehicleReg", "Driver", "StartDateTime", "EndDateTime",
+                            "DailyAllowance", "OffloadingPay", "LoaderAllowance", 
+                            "SecurityFee", "ParkingFee", "NightOutAllowance"]
+            allowance_data = filtered_trips[allowance_cols].copy()
+            # Calculate total allowances
+            allowance_data["TotalAllowances"] = (
+                allowance_data[["DailyAllowance", "OffloadingPay", "LoaderAllowance", 
+                               "SecurityFee", "ParkingFee", "NightOutAllowance"]]
+                .fillna(0).sum(axis=1)
+            )
+            st.dataframe(allowance_data, use_container_width=True)
+            
+            # Summary statistics
+            total_allowances = allowance_data["TotalAllowances"].sum()
+            st.metric("Total Allowances", f"KSh {total_allowances:,.2f}")
+            
+            st.download_button(
+                "Download Allowances CSV",
+                allowance_data.to_csv(index=False),
+                "allowances_report.csv",
+                "text/csv"
+            )
 
     elif report_type == "Summary KPIs":
-        st.subheader("Summary KPIs & Insights")
-        # Fuel cost per km
-        total_km = pd.to_numeric(trips[trips["Status"] == "closed"]["DistanceKM"], errors="coerce").fillna(0).sum()
-        total_fuel_cost = pd.to_numeric(fuel["Cost"], errors="coerce").fillna(0).sum()
-        total_litres = pd.to_numeric(fuel["Litres"], errors="coerce").fillna(0).sum()
+        st.subheader("📊 Key Performance Indicators")
+        
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Closed trips", f"{len(trips[trips['Status']=='closed']):,}")
-        col2.metric("Total distance (KM)", f"{total_km:.2f}")
-        col3.metric("Total fuel (L)", f"{total_litres:.2f}")
-        col4.metric("Total fuel cost", f"{total_fuel_cost:.2f}")
-        if total_km > 0:
-            st.write(f"**Fuel cost per KM:** {total_fuel_cost / total_km:.3f}")
-        else:
-            st.write("**Fuel cost per KM:** N/A (no closed trips)")
+        
+        with col1:
+            total_trips = len(filtered_trips)
+            open_trips = len(filtered_trips[filtered_trips["Status"] == "open"])
+            st.metric("Total Trips", total_trips, delta=f"{open_trips} open")
+        
+        with col2:
+            total_distance = filtered_trips["DistanceKM"].fillna(0).sum()
+            st.metric("Total Distance", f"{total_distance:,.0f} KM")
+        
+        with col3:
+            total_fuel = filtered_fuel["Litres"].fillna(0).sum()
+            st.metric("Total Fuel", f"{total_fuel:,.1f} L")
+        
+        with col4:
+            if total_fuel > 0:
+                avg_efficiency = total_distance / total_fuel
+                st.metric("Avg Efficiency", f"{avg_efficiency:.2f} KM/L")
+            else:
+                st.metric("Avg Efficiency", "N/A")
+        
+        # Charts
+        if not filtered_trips.empty:
+            st.subheader("Trip Status Distribution")
+            status_counts = filtered_trips["Status"].value_counts()
+            st.bar_chart(status_counts)
+            
+            st.subheader("Trips by Vehicle Type")
+            vehicle_type_counts = filtered_trips["VehicleType"].value_counts()
+            st.bar_chart(vehicle_type_counts)
+        
+        if not filtered_fuel.empty:
+            st.subheader("Fuel Efficiency by Vehicle")
+            fuel_by_vehicle = (
+                filtered_fuel.groupby("VehicleReg")["EfficiencyKMperL"]
+                .mean()
+                .dropna()
+                .sort_values(ascending=False)
+            )
+            if not fuel_by_vehicle.empty:
+                st.bar_chart(fuel_by_vehicle)
 
-        # Top 10 vehicles by distance
-        vehicle_km = trips[trips["Status"] == "closed"].groupby("VehicleReg")["DistanceKM"].sum().reset_index().sort_values("DistanceKM", ascending=False)
-        st.markdown("**Top vehicles by distance (closed trips)**")
-        st.dataframe(vehicle_km.head(10))
-
-        # suggestions
-        st.markdown("**Suggestions / Notes:**")
-        st.write("- Encourage drivers to upload mileage photos at start and end consistently for accurate distance tracking.")
-        st.write("- Use the Allowances report to reconcile cash disbursements monthly.")
-        st.write("- Consider adding trip revenue or job ID to the trip data if you want trip-level profitability.")
-
-    st.markdown("---")
-    st.info("Tip: CSVs are in the 'data/' folder, images in 'uploads/'. Use the filters to refine the reports. You can download filtered reports for sharing or further analysis.")
+# Add session state cleanup on logout
+if st.sidebar.button("🔄 Refresh Data"):
+    st.cache_data.clear()
+    st.rerun()
