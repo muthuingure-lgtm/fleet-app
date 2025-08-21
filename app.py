@@ -30,11 +30,11 @@ VEHICLES = [
     "KDE 309L", "KDE 098L", "KDK 139R", "KCX 712N", "KDC 563J", "KDD 113R", "KDE 177K",
     "KDE 225L", "KDE 454K", "KDR 819B", "KCX 718N", "KDR 462A", "KDQ 896V", "KDM 724U",
     "KBT 673G", "KDB 266R", "KDR 695S", "KCZ 218P", "KDB 971R", "KDE 199K", "KDE 188K",
-    "KCX 995J", "KCZ 722M", "KDB 548V", "KDC 945F", "KDE 144K"
+    "KCX 995J", "KCZ 722M", "KDB 548V", "KDC 945F", "KDE 144K", "Executive"
 ]
 
-# Special executive login
-EXECUTIVE_CODE = "Executive"
+# Admin access code
+ADMIN_CODE = "admin123"
 
 # -----------------------
 # Session init
@@ -51,10 +51,10 @@ if not st.session_state.logged_in:
     st.title("🚚 Fleet Management Login")
     
     st.markdown("### Please login to access the system")
-    st.info("Drivers: Enter your vehicle number | Executives: Enter 'Executive'")
+    st.info("Drivers: Enter your vehicle number | Admin: Enter admin code")
     
     with st.form("login_form"):
-        vehicle_number = st.text_input("Enter Vehicle Number or 'Executive' to login:").strip()
+        vehicle_number = st.text_input("Enter Vehicle Number or Admin Code:").strip()
         login_submitted = st.form_submit_button("Login")
     
     if login_submitted:
@@ -64,14 +64,14 @@ if not st.session_state.logged_in:
             st.session_state.vehicle = vehicle_number
             st.success(f"Logged in as driver for {vehicle_number}")
             st.rerun()
-        elif vehicle_number == EXECUTIVE_CODE:
+        elif vehicle_number == ADMIN_CODE:
             st.session_state.logged_in = True
             st.session_state.role = "admin"
             st.session_state.vehicle = None
-            st.success("Logged in as Executive (Admin)")
+            st.success("Logged in as Administrator")
             st.rerun()
         else:
-            st.error("Invalid vehicle number or code. Please check and try again.")
+            st.error("Invalid vehicle number or admin code. Please check and try again.")
     
     # Stop execution here if not logged in
     st.stop()
@@ -226,7 +226,7 @@ with col2:
     if st.session_state.role == "driver":
         st.info(f"Driver: {st.session_state.vehicle}")
     else:
-        st.info("Executive Access")
+        st.info("Administrator Access")
 with col3:
     if st.button("Logout"):
         st.session_state.logged_in = False
@@ -237,7 +237,7 @@ with col3:
 # Create sidebar menu based on role
 if st.session_state.role == "driver":
     menu = st.sidebar.radio("Menu", ["Start Trip", "End Trip", "Log Refuel"])
-else:  # admin/executive
+else:  # admin
     menu = st.sidebar.radio("Menu", ["Start Trip", "End Trip", "Log Refuel", "View Dashboard"])
 
 # ---------- START TRIP ----------
