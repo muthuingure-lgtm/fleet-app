@@ -469,61 +469,70 @@ elif menu == "Log Refuel":
     st.header("⛽ Log Refuel")
     st.info("Efficiency = distance since last refuel ÷ litres on this refuel. Receipt attachment is required.")
 
-    # Pre-fill vehicle registration for drivers
+    if "fuel_just_submitted" not in st.session_state:
+        st.session_state.fuel_just_submitted = False
+    if "fuel_form_key" not in st.session_state:
+        st.session_state.fuel_form_key = 0
+
+    k = st.session_state.fuel_form_key  # changes on reset, giving the widgets below fresh blank values
+
     if st.session_state.role == "driver":
-        vehicle_reg = st.text_input("Vehicle Registration", value=st.session_state.vehicle, disabled=True)
+        vehicle_reg = st.text_input("Vehicle Registration", value=st.session_state.vehicle, disabled=True, key=f"veh_{k}")
     else:
-        vehicle_reg = st.text_input("Vehicle Registration (match vehicle on trip) *").strip()
-    
-    driver = st.text_input("Driver Name *").strip()
-    litres = st.number_input("Fuelled Litres *", min_value=0.0, step=0.1, format="%.2f")
-    cost = st.number_input("Cost (optional)", min_value=0.0, step=0.1, format="%.2f")
-    mileage_photo = st.file_uploader("Upload mileage reading photo (optional)", type=["jpg", "jpeg", "png"])
-    receipt_photo = st.file_uploader("Upload receipt photo (REQUIRED) *", type=["jpg", "jpeg", "png"])
+        vehicle_reg = st.text_input("Vehicle Registration (match vehicle on trip) *", key=f"veh_{k}").strip()
 
-    if st.button("Submit Refuel"):
-        if not vehicle_reg:
-            st.error("Please enter Vehicle Registration.")
-        elif not driver:
-            st.error("Please enter Driver Name.")
-        elif litres <= 0:
-            st.error("Litres must be greater than 0.")
-        elif receipt_photo is None:
-            st.error("Receipt photo is required for fuel submission.")
-        else:
-            when = now_iso()
-            mileage_path = save_upload(mileage_photo, MILEAGE_DIR, "refuel_mileage") if mileage_photo else None
-            receipt_path = save_upload(receipt_photo, RECEIPTS_DIR, "receipt") if receipt_photo else None
+    driver = st.text_input("Driver Name *", key=f"driver_{k}").strip()
+    litres = st.number_input("Fuelled Litres *", min_value=0.0, step=0.1, format="%.2f", key=f"litres_{k}")
+    cost = st.number_input("Cost (optional)", min_value=0.0, step=0.1, format="%.2f", key=f"cost_{k}")
+    mileage_photo = st.file_uploader("Upload mileage reading photo (optional)", type=["jpg", "jpeg", "png"], key=f"mileage_photo_{k}")
+    receipt_photo = st.file_uploader("Upload receipt photo (REQUIRED) *", type=["jpg", "jpeg", "png"], key=f"receipt_photo_{k}")
 
-            dist_km = distance_since_last_refuel_km(trips_df, fuel_df, driver, vehicle_reg, when)
-            efficiency = (dist_km / litres) if litres > 0 else None
-
-            fuel_id = f"FUEL-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
-            new_fuel = {
-                "FuelID": fuel_id,
-                "VehicleReg": vehicle_reg,
-                "Driver": driver,
-                "DateTime": when,
-                "Litres": float(litres),
-                "Cost": float(cost) if cost else pd.NA,
-                "MileagePhoto": mileage_path if mileage_path else pd.NA,
-                "ReceiptPhoto": receipt_path,
-                "DistanceSinceLastRefuelKM": float(round(dist_km, 2)),
-                "EfficiencyKMperL": float(round(efficiency, 2)) if efficiency is not None else pd.NA
-            }
-
-            new_df = pd.DataFrame([new_fuel], columns=fuel_df.columns)
-            for col in ["Litres", "Cost", "DistanceSinceLastRefuelKM", "EfficiencyKMperL"]:
-                if col in new_df.columns:
-                    new_df[col] = pd.to_numeric(new_df[col], errors="coerce")
-
-            fuel_df = pd.concat([fuel_df, new_df], ignore_index=True, sort=False)
-            save_csv(FUEL_CSV, fuel_df)
-
-            eff_text = f"{(dist_km/litres):.2f} KM/L" if efficiency is not None else "N/A"
-            st.success(f"Refuel logged. Distance since last refuel: {dist_km:.2f} KM | Efficiency: {eff_text}")
-            st.balloons()
-
+    if st.session_state.fuel_just_submitted:
+        st.success("✅ This refuel entry was already submitted.")
+        if st.button("➕ Log Another Refuel"):
+            st.session_state.fuel_just_submitted = False
+            st.session_state.fuel_form_key += 1
+            st.rerun()
+    else:
+        if st.button("Submit Refuel"):
+            if not vehicle_reg:
+                st.error("Please enter Vehicle Registration.")
+            elif not driver:
+                st.error("Please enter Driver Name.")
+            elif litres <= 0:
+                st.error("Litres must be greater than 0.")
+            elif receipt_photo is None:
+                st.error("Receipt photo is required for fuel submission.")
+            else:
+                when = now_iso()
+                mileage_path = save_upload(mileage_photo, MILEAGE_DIR, "refuel_mileage") if mileage_photo else None
+                receipt_path = save_upload(receipt_photo, RECEIPTS_DIR, "receipt") if receipt_photo else None
+                dist_km = distance_since_last_refuel_km(trips_df, fuel_df, driver, vehicle_reg, when)
+                efficiency = (dist_km / litres) if litres > 0 else None
+                fuel_id = f"FUEL-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+                new_fuel = {
+                    "FuelID": fuel_id,
+                    "VehicleReg": vehicle_reg,
+                    "Driver": driver,
+                    "DateTime": when,
+                    "Litres": float(litres),
+                    "Cost": float(cost) if cost else pd.NA,
+                    "MileagePhoto": mileage_path,
+                    "ReceiptPhoto": receipt_path,
+                    "DistanceSinceLastRefuelKM": float(round(dist_km, 2)),
+                    "EfficiencyKMperL": float(round(efficiency, 2)) if efficiency is not None else pd.NA
+                }
+                new_df = pd.DataFrame([new_fuel], columns=fuel_df.columns)
+                for col in ["Litres", "Cost", "DistanceSinceLastRefuelKM", "EfficiencyKMperL"]:
+                    if col in new_df.columns:
+                        new_df[col] = pd.to_numeric(new_df[col], errors="coerce")
+                fuel_df = pd.concat([fuel_df, new_df], ignore_index=True, sort=False)
+                save_csv(FUEL_CSV, fuel_df)
+                eff_text = f"{(dist_km/litres):.2f} KM/L" if efficiency is not None else "N/A"
+                st.session_state.fuel_just_submitted = True
+                st.success(f"Refuel logged. Distance since last refuel: {dist_km:.2f} KM | Efficiency: {eff_text}")
+                st.balloons()
+                st.rerun()
 # ---------- VIEW DASHBOARD (Admin only) ----------
 elif menu == "View Dashboard" and st.session_state.role == "admin":
     st.header("📊 Dashboard")
