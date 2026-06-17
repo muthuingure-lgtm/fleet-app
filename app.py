@@ -493,7 +493,7 @@ elif menu == "Log Refuel":
         else:
             when = now_iso()
             mileage_path = save_upload(mileage_photo, MILEAGE_DIR, "refuel_mileage") if mileage_photo else None
-receipt_path = save_upload(receipt_photo, RECEIPTS_DIR, "receipt") if receipt_photo else None
+            receipt_path = save_upload(receipt_photo, RECEIPTS_DIR, "receipt") if receipt_photo else None
 
             dist_km = distance_since_last_refuel_km(trips_df, fuel_df, driver, vehicle_reg, when)
             efficiency = (dist_km / litres) if litres > 0 else None
